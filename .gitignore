@@ -3,6 +3,14 @@ __pycache__/
 *.py[cod]
 .venv/
 .pytest_cache/
+requirements-full.txt
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
 
 # Data and local MLflow outputs
 data/raw/*
@@ -12,8 +20,17 @@ data/processed/*
 mlruns/
 artifacts/*
 !artifacts/.gitkeep
+
+# Generated monitoring reports
 reports/*
 !reports/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
 
 # Editor / OS
 .vscode/

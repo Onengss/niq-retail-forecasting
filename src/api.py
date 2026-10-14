@@ -2,21 +2,82 @@
 from datetime import date
 from pathlib import Path
 import json
+import time
 
 import joblib
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Histogram,
+    generate_latest,
+    make_asgi_app,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / "artifacts" / "forecast_model.joblib"
 METADATA_PATH = ROOT / "artifacts" / "model_metadata.json"
+
+REQUEST_COUNT = Counter(
+    "niq_api_requests_total",
+    "Total number of API HTTP requests",
+    ["method", "endpoint", "status"],
+)
+REQUEST_LATENCY = Histogram(
+    "niq_api_request_duration_seconds",
+    "API request duration in seconds",
+    ["method", "endpoint"],
+)
 
 app = FastAPI(
     title="Retail Sales Forecast API",
     description="Portfolio demonstration API for a retail demand forecasting model.",
     version="1.0.0",
 )
+
+
+@app.middleware("http")
+async def monitor_requests(request: Request, call_next):
+    start_time = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        duration = time.perf_counter() - start_time
+        REQUEST_COUNT.labels(
+            request.method,
+            request.url.path,
+            str(status_code),
+        ).inc()
+        REQUEST_LATENCY.labels(
+            request.method,
+            request.url.path,
+        ).observe(duration)
+
+
+metrics_app = make_asgi_app()
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics():
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
+
+
+app.mount("/metrics", metrics_app)
+
+
+@app.get("/favicon.ico", include_in_schema=False, status_code=204)
+def favicon():
+    return Response(status_code=204)
+
 
 class PredictionRequest(BaseModel):
     product_id: str = Field(..., min_length=1, description="Retail stock/product code")

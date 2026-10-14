@@ -114,6 +114,131 @@ docker run --rm -p 8000:8000 niq-retail-forecasting
 
 The Docker image expects the model artifact to exist. Run training before building the image.
 
+## MLOps Monitoring and Observability
+
+This project includes an MLOps monitoring workflow for evaluating forecasting performance, detecting data drift, and monitoring pipeline execution.
+
+### Model performance
+
+The project compares a Random Forest forecasting model against a weekly-lag baseline using MAE, RMSE, and WAPE.
+
+| Model | MAE | RMSE | WAPE |
+|---|---:|---:|---:|
+| Weekly baseline | 168.144 | 442.609 | 99.15% |
+| Random Forest | 133.233 | 351.787 | 78.56% |
+
+The Random Forest achieved approximately 20.8% lower MAE than the baseline on the evaluation dataset.
+
+### Data drift monitoring
+
+The drift detection module compares historical reference data with a later observation period.
+
+| Feature | Drift score | Detection result |
+|---|---:|---|
+| Units sold | 0.1674 | Drift detected |
+| Product ID distribution | 0.0898 | No drift detected |
+| Revenue | 0.1430 | Drift detected |
+
+Drift scores are produced using feature-specific statistical methods and should not be interpreted as directly comparable across all features.
+
+### Monitoring architecture
+
+```text
+Historical Retail Dataset
+          |
+    Data Preparation
+          |
+   Model Training
+          |
+    Random Forest
+          |
+     +----+------------------+
+     |                       |
+  FastAPI             Monitoring Pipeline
+  Port 8001            |             |
+     |             Model Quality   Data Drift
+     |                 |             |
+     |                 +------+------+
+     |                        |
+     |                   CSV Reports
+     |                        |
+     |                Metrics Exporter
+     |                   Port 8002
+     |                        |
+     +------------+-----------+
+                  |
+              Prometheus
+               Port 9090
+                  |
+                Grafana
+               Port 3000
+                  |
+           Dashboards & Alerts
+```
+
+### Running model monitoring
+
+Run the evaluation and drift detection pipeline manually:
+
+```powershell
+python -m src.monitoring_pipeline
+```
+
+Start the model metrics exporter:
+
+```powershell
+python -m src.model_metrics
+```
+
+Start the monitoring scheduler in a separate terminal:
+
+```powershell
+python -m src.monitoring_scheduler
+```
+
+The scheduler executes the monitoring pipeline approximately once per hour while the process remains running.
+
+### Starting Prometheus and Grafana
+
+With Docker Desktop running:
+
+```powershell
+docker compose up -d
+```
+
+Open the monitoring services:
+
+- Prometheus: [http://localhost:9090](http://localhost:9090)
+- Grafana: [http://localhost:3000](http://localhost:3000)
+
+Prometheus collects API performance metrics and model monitoring metrics.
+
+### Pipeline health monitoring
+
+The monitoring system exports the following Prometheus metrics:
+
+| Metric | Description |
+|---|---|
+| `niq_pipeline_success` | Success status of the last completed execution |
+| `niq_pipeline_duration_seconds` | Duration of the last execution |
+| `niq_pipeline_last_run_timestamp_seconds` | Timestamp of the last completed execution |
+| `niq_model_mae` | Model mean absolute error |
+| `niq_model_rmse` | Model root mean squared error |
+| `niq_model_wape` | Model weighted absolute percentage error |
+| `niq_data_drift_score` | Feature-level drift score |
+
+Grafana dashboards visualize model performance, data drift, API behavior, and pipeline health. Alert rules detect failed or overdue monitoring executions.
+
+### Limitations
+
+This is a local demonstration using historical retail data, not a production deployment.
+
+- Monitoring calculations use saved historical data rather than continuously arriving production data.
+- Forecast quality metrics are recalculated against the existing evaluation dataset.
+- The local scheduler stops when its Python process exits.
+- Automated model retraining and deployment are not implemented.
+- Production monitoring would require reliable data ingestion, data freshness checks, persistent infrastructure, and model performance evaluation against newly available ground truth.
+
 ## Repository structure
 
 ```text
